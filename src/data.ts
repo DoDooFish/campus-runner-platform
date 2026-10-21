@@ -1,56 +1,7 @@
-import type { Task, User } from './types'
-
-export const demoUser: User = {
-  name: 'LUNA同学',
-  credit: 96,
-  completed: 12,
-  published: 5,
-}
-
-export const seedTasks: Task[] = [
-  {
-    id: '1',
-    title: '帮我取一下菜鸟驿站的快递',
-    description: '一个中等大小的纸箱，凭取件码即可领取，放到宿舍楼下即可。',
-    category: '快递代取',
-    campus: '东校区',
-    pickup: '东区菜鸟驿站',
-    deadline: '今天 18:30',
-    reward: 5,
-    publisher: '小林',
-    publisherCredit: 98,
-    status: '待接单',
-    createdAt: '10分钟前',
-  },
-  {
-    id: '2',
-    title: '帮买两杯冰美式',
-    description: '从校内咖啡店带回两杯冰美式，无糖少冰。',
-    category: '代买物品',
-    campus: '东校区',
-    pickup: '图书馆一楼咖啡店',
-    deadline: '今天 16:40',
-    reward: 8,
-    publisher: 'Momo',
-    publisherCredit: 94,
-    status: '待接单',
-    createdAt: '25分钟前',
-  },
-  {
-    id: '3',
-    title: '图书馆三楼帮占一个座',
-    description: '靠窗或电源位优先，拍照确认座位即可。',
-    category: '代占座',
-    campus: '西校区',
-    pickup: '图书馆三楼',
-    deadline: '今天 17:00',
-    reward: 3,
-    publisher: '阿泽',
-    publisherCredit: 91,
-    status: '进行中',
-    runner: '小王',
-    createdAt: '40分钟前',
-  },
-]
-
-export const categories = ['全部', '快递代取', '代买物品', '代占座', '其他'] as const
+import type {Task} from './types';export const initialTasks:Task[]=[
+{id:'1',title:'东区快递代取',description:'帮我从东区菜鸟驿站取一个中小件，放到图书馆一楼。',category:'快递',location:'东区菜鸟驿站',destination:'图书馆一楼',reward:5,deadline:'18:30',distance:.18,status:'open',publisher:'林同学',credit:98,tags:['顺路','5分钟']},
+{id:'2',title:'帮买一杯冰美式',description:'无糖少冰，送到教学楼 A 座。',category:'代买',location:'南门咖啡店',destination:'教学楼 A 座',reward:8,deadline:'17:40',distance:.42,status:'open',publisher:'Momo',credit:96,tags:['顺路','高奖励']},
+{id:'3',title:'图书馆帮占一个座',description:'三楼靠窗区域，18:00 前帮忙占座。',category:'占座',location:'图书馆三楼',destination:'图书馆三楼',reward:3,deadline:'18:00',distance:.31,status:'open',publisher:'小周',credit:94,tags:['附近','低耗时']},
+{id:'4',title:'打印课程资料',description:'《软件工程》资料 18 页，黑白双面。',category:'资料',location:'综合楼打印店',destination:'宿舍区 7 栋',reward:6,deadline:'19:10',distance:.68,status:'open',publisher:'阿杰',credit:97,tags:['新任务']},
+{id:'5',title:'帮拿社团材料',description:'顺路从社团活动室拿资料到体育馆。',category:'其他',location:'社团活动室',destination:'体育馆',reward:7,deadline:'20:00',distance:.51,status:'open',publisher:'小雨',credit:99,tags:['顺路','信用达人']}
+];

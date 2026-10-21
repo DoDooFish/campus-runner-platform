@@ -1,33 +1,4 @@
-export type Category = '快递代取' | '代买物品' | '代占座' | '其他'
-export type Status = '待接单' | '进行中' | '已完成'
-
-export interface Task {
-  id: string
-  title: string
-  description: string
-  category: Category
-  campus: string
-  pickup: string
-  deadline: string
-  reward: number
-  publisher: string
-  publisherCredit: number
-  status: Status
-  runner?: string
-  createdAt: string
-}
-
-export interface User {
-  name: string
-  credit: number
-  completed: number
-  published: number
-}
-
-export interface Rating {
-  id: string
-  taskId: string
-  from: string
-  score: number
-  comment: string
-}
+export type Category='快递'|'代买'|'占座'|'资料'|'其他';
+export type Status='open'|'accepted'|'completed'|'cancelled';
+export interface Profile{id:string;display_name:string;campus:string|null;credit_score:number;mutual_points:number;completed_count:number;role:'user'|'admin'}
+export interface Task{id:string;publisher_id:string;accepted_by:string|null;title:string;description:string;category:Category;pickup_location:string;destination:string;reward:number;deadline:string|null;distance_m:number|null;status:Status;created_at:string;publisher?:{display_name:string;credit_score:number}}

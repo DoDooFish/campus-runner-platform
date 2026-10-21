@@ -1,260 +1,42 @@
-import { useEffect, useMemo, useState } from 'react'
-import {
-  ArrowRight, Bell, CheckCircle2, ChevronRight, Clock3, HandHeart,
-  Home, ListChecks, MapPin, MessageCircle, Plus, Search, ShieldCheck,
-  Star, UserRound, Wallet, X
-} from 'lucide-react'
-import type { Category, Rating, Status, Task, User } from './types'
-import { categories } from './data'
-import { loadRatings, loadTasks, loadUser, saveRatings, saveTasks, saveUser } from './storage'
-
-type Tab = 'home' | 'tasks' | 'publish' | 'orders' | 'profile'
-
-const categoryIcon: Record<string, string> = {
-  '快递代取': '📦',
-  '代买物品': '🛍️',
-  '代占座': '💺',
-  '其他': '✨',
+import {useCallback,useEffect,useMemo,useState,type FormEvent,type ReactNode} from 'react';
+import {ArrowRight,Bell,CheckCircle2,Clock3,Compass,Heart,Leaf,LogIn,LogOut,MapPin,Menu,Plus,Search,ShieldCheck,Sparkles,Star,UserRound,X} from 'lucide-react';
+import {supabase,isConfigured} from './lib/supabase';
+import {acceptTask,cancelTask,completeTask,listTasks,myProfile,publishTask,reviewTask,saveProfile} from './lib/api';
+import type {Category,Profile,Task} from './types';
+type Page='home'|'tasks'|'radar'|'publish'|'orders'|'profile'|'admin';
+const cats:Category[]=['快递','代买','占座','资料','其他'];
+const demo:Task[]=[{id:'d1',publisher_id:'demo',accepted_by:null,title:'东区快递代取',description:'帮忙从东区菜鸟驿站取一个中小件，送到图书馆一楼。',category:'快递',pickup_location:'东区菜鸟驿站',destination:'图书馆一楼',reward:5,deadline:null,distance_m:180,status:'open',created_at:new Date().toISOString(),publisher:{display_name:'林同学',credit_score:98}},{id:'d2',publisher_id:'demo2',accepted_by:null,title:'帮买一杯冰美式',description:'无糖少冰，送到教学楼 A 座。',category:'代买',pickup_location:'南门咖啡店',destination:'教学楼 A 座',reward:8,deadline:null,distance_m:420,status:'open',created_at:new Date().toISOString(),publisher:{display_name:'Momo',credit_score:96}},{id:'d3',publisher_id:'demo3',accepted_by:null,title:'图书馆帮占一个座',description:'三楼靠窗区域即可。',category:'占座',pickup_location:'图书馆三楼',destination:'图书馆三楼',reward:3,deadline:null,distance_m:310,status:'open',created_at:new Date().toISOString(),publisher:{display_name:'小周',credit_score:94}},{id:'d4',publisher_id:'demo4',accepted_by:null,title:'帮拿社团材料',description:'顺路从社团活动室拿一份资料到体育馆。',category:'其他',pickup_location:'社团活动室',destination:'体育馆',reward:7,deadline:null,distance_m:510,status:'open',created_at:new Date().toISOString(),publisher:{display_name:'小雨',credit_score:99}}];
+export default function App(){
+ const[session,setSession]=useState<any>(null),[profile,setProfile]=useState<Profile|null>(null),[tasks,setTasks]=useState<Task[]>(demo),[page,setPage]=useState<Page>('home'),[auth,setAuth]=useState<'login'|'signup'|null>(null),[query,setQuery]=useState(''),[cat,setCat]=useState<'全部'|Category>('全部'),[selected,setSelected]=useState<Task|null>(null),[toast,setToast]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[navOpen,setNavOpen]=useState(false),[review,setReview]=useState<Task|null>(null);
+ const notify=(s:string)=>{setToast(s);window.setTimeout(()=>setToast(''),3000)};
+ const refresh=useCallback(async()=>{if(!supabase)return;try{const [t,p]=await Promise.all([listTasks(),myProfile()]);setTasks(t);setProfile(p)}catch(e:any){notify(e.message||'数据加载失败')}},[]);
+ useEffect(()=>{if(!supabase)return;supabase.auth.getSession().then(({data})=>setSession(data.session));const{data:{subscription}}=supabase.auth.onAuthStateChange((_e,s)=>{setSession(s);if(s)setTimeout(()=>void refresh(),0);else{setProfile(null);setTasks(demo)}});void refresh();const channel=supabase.channel('task-changes').on('postgres_changes',{event:'*',schema:'public',table:'tasks'},()=>void refresh()).subscribe();return()=>{subscription.unsubscribe();void supabase.removeChannel(channel)}},[refresh]);
+ const filtered=useMemo(()=>tasks.filter(t=>t.status==='open'&&(cat==='全部'||t.category===cat)&&`${t.title}${t.description}${t.pickup_location}${t.destination}`.toLowerCase().includes(query.toLowerCase())),[tasks,cat,query]);
+ const myOrders=useMemo(()=>session?tasks.filter(t=>t.publisher_id===session.user.id||t.accepted_by===session.user.id):[],[tasks,session]);
+ async function run(fn:()=>Promise<any>,success:string){setBusy(true);setError('');try{await fn();await refresh();setSelected(null);notify(success)}catch(e:any){setError(e.message||'操作失败，请稍后重试')}finally{setBusy(false)}}
+ async function authSubmit(e:FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError('');const f=new FormData(e.currentTarget),email=String(f.get('email')||'').trim(),password=String(f.get('password')||'');if(!supabase){setError('尚未连接数据库。请先按 README 配置 Supabase。');setBusy(false);return}try{if(auth==='signup'){if(password.length<8)throw Error('密码至少需要 8 位');const{data,error}=await supabase.auth.signUp({email,password,options:{data:{display_name:String(f.get('display_name')||''),campus:String(f.get('campus')||'')},emailRedirectTo:location.origin+location.pathname}});if(error)throw error;setAuth(null);notify(data.session?'注册成功，欢迎加入校园帮帮！':'注册申请已提交，请查收邮箱完成验证。')}else{const{error}=await supabase.auth.signInWithPassword({email,password});if(error)throw error;setAuth(null);notify('登录成功，欢迎回来！')}}catch(e:any){setError(e.message||'认证失败')}finally{setBusy(false)}}
+ async function submitTask(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!session){setAuth('login');return}const f=new FormData(e.currentTarget);await run(()=>publishTask({title:String(f.get('title')),description:String(f.get('description')),category:String(f.get('category')) as Category,pickup_location:String(f.get('pickup_location')),destination:String(f.get('destination')),reward:Number(f.get('reward')),deadline:String(f.get('deadline')||'')||undefined}),'任务已发布，其他同学现在可以看到了！');setPage('tasks')}
+ async function submitReview(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!review||!session)return;const f=new FormData(e.currentTarget),reviewee=review.publisher_id===session.user.id?review.accepted_by:review.publisher_id;if(!reviewee)return;await run(()=>reviewTask(review.id,reviewee,Number(f.get('rating')),String(f.get('comment')||'')),'评价已提交');setReview(null)}
+ const logout=async()=>{if(supabase)await supabase.auth.signOut();setPage('home');notify('已退出登录')};
+ return <div className="app"><header className="topbar"><button className="brand" onClick={()=>setPage('home')}><span className="brand-mark"><Heart fill="currentColor" size={22}/></span><span><b>校园帮帮</b><small>SMART CAMPUS HELP</small></span></button><nav className={navOpen?'nav open':'nav'}>{([['home','首页'],['tasks','找任务'],['radar','顺路雷达'],['publish','发布任务'],['orders','我的订单']] as [Page,string][]).map(([p,l])=><button key={p} className={page===p?'active':''} onClick={()=>{setPage(p);setNavOpen(false)}}>{l}</button>)}{profile?.role==='admin'&&<button onClick={()=>setPage('admin')}>管理后台</button>}</nav><div className="top-actions">{session?<><button className="user-chip" onClick={()=>setPage('profile')}><span>{(profile?.display_name||session.user.email||'我').slice(0,1).toUpperCase()}</span><b>{profile?.display_name||'个人中心'}</b></button><button className="outline small-hide" onClick={logout}><LogOut size={16}/>退出</button></>:<><button className="outline" onClick={()=>{setAuth('login');setError('')}}>登录</button><button className="primary" onClick={()=>{setAuth('signup');setError('')}}>免费注册</button></>}<button className="menu-btn" onClick={()=>setNavOpen(!navOpen)}><Menu/></button></div></header>
+ {!isConfigured&&<div className="setup-banner"><ShieldCheck size={19}/><span><b>预览模式</b> 当前展示示例任务。配置 Supabase 后才能启用真实账号、云端数据库与实时任务。</span><button onClick={()=>setAuth('signup')}>开始配置 →</button></div>}
+ <main>{page==='home'&&<Home tasks={tasks} go={setPage} open={setSelected} ai={()=>{const best=[...tasks].filter(t=>t.status==='open').sort((a,b)=>b.reward/Math.max(100,b.distance_m||300)-a.reward/Math.max(100,a.distance_m||300))[0];if(best)setSelected(best);else notify('暂无可推荐任务')}}/>}
+ {page==='tasks'&&<section className="page"><Head kicker="TASK MARKET" title="找任务" desc="挑一个适合你的任务，让顺路也能创造价值。" action={<button className="primary" onClick={()=>setPage('publish')}><Plus size={18}/>发布任务</button>}/><div className="searchbox"><Search size={21}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="搜索快递、咖啡、地点或关键词"/></div><div className="filters">{(['全部',...cats] as ('全部'|Category)[]).map(c=><button className={cat===c?'chosen':''} key={c} onClick={()=>setCat(c)}>{c}</button>)}</div><div className="task-list">{filtered.map(t=><TaskCard key={t.id} task={t} click={()=>setSelected(t)}/>)}</div>{!filtered.length&&<Empty>没有符合条件的任务，试试其他关键词。</Empty>}</section>}
+ {page==='radar'&&<Radar tasks={tasks.filter(t=>t.status==='open'&&(t.distance_m??99999)<=550)} click={setSelected}/>}
+ {page==='publish'&&<section className="page narrow"><Head kicker="CREATE A TASK" title="发布互助任务" desc="写清需求、地点和奖励，让同学更容易接单。"/><form className="form-card" onSubmit={submitTask}><div className="form-note"><Sparkles size={20}/><span><b>智能发布建议</b><small>标题尽量具体，写明物品、取件地点和送达位置。</small></span></div><label>任务标题<input name="title" required minLength={4} maxLength={80} placeholder="例如：帮我从东区驿站取快递"/></label><div className="two-col"><label>任务类型<select name="category">{cats.map(c=><option key={c}>{c}</option>)}</select></label><label>奖励金额（元）<input name="reward" type="number" min="1" max="500" defaultValue="5" required/></label></div><label>具体说明<textarea name="description" rows={4} required maxLength={1000} placeholder="物品、特殊要求、交接方式等"/></label><div className="two-col"><label>取件 / 出发地点<input name="pickup_location" required placeholder="例如：东区菜鸟驿站"/></label><label>送达地点<input name="destination" required placeholder="例如：宿舍 7 栋楼下"/></label></div><label>期望完成时间<input name="deadline" type="datetime-local"/></label><div className="form-footer"><span><ShieldCheck size={18}/>任务会绑定账号，支持状态追踪与评价。</span><button className="primary" disabled={busy}>{busy?'正在发布…':'发布任务'} <ArrowRight size={18}/></button></div></form></section>}
+ {page==='orders'&&<section className="page"><Head kicker="MY ORDERS" title="我的订单" desc="查看发布与接取的任务，并完成履约与互评。"/>{!session?<Empty>登录后即可查看你的个人订单。<button className="primary" onClick={()=>setAuth('login')}>登录查看</button></Empty>:<div className="task-list">{myOrders.map(t=><TaskCard key={t.id} task={t} click={()=>setSelected(t)}/>)}</div>}</section>}
+ {page==='profile'&&<Profile session={session} profile={profile} login={()=>setAuth('login')} save={(n,c)=>run(()=>saveProfile(n,c),'资料已保存')}/>}
+ {page==='admin'&&profile?.role==='admin'&&<section className="page"><Head kicker="ADMIN CONSOLE" title="管理后台" desc="管理员权限由数据库角色与 RLS 控制。"/><div className="admin-stats"><div><span>任务总量</span><b>{tasks.length}</b></div><div><span>待接任务</span><b>{tasks.filter(t=>t.status==='open').length}</b></div><div><span>进行中</span><b>{tasks.filter(t=>t.status==='accepted').length}</b></div></div><div className="task-list">{tasks.map(t=><TaskCard key={t.id} task={t} click={()=>setSelected(t)}/>)}</div></section>}</main>
+ <footer className="footer"><span>♥ 校园帮帮 3.0</span><span>让每一次顺路，都产生价值。</span><span>隐私优先 · 信用互助 · 低碳校园</span></footer>
+ {selected&&<TaskModal task={selected} uid={session?.user?.id} busy={busy} error={error} close={()=>{setSelected(null);setError('')}} accept={()=>{if(!session){setSelected(null);setAuth('login');return}void run(()=>acceptTask(selected.id),'接单成功！')} } complete={()=>void run(()=>completeTask(selected.id),'任务完成，互助值已更新！')} cancel={()=>void run(()=>cancelTask(selected.id),'任务已取消')} review={()=>setReview(selected)}/>}
+ {auth&&<div className="overlay" onMouseDown={()=>{setAuth(null);setError('')}}><section className="auth-card" onMouseDown={e=>e.stopPropagation()}><button className="close" onClick={()=>{setAuth(null);setError('')}}><X/></button><div className="auth-logo"><Heart fill="currentColor" size={24}/></div><div className="eyebrow">CAMPUS HELP · 3.0</div><h2>{auth==='login'?'欢迎回来':'创建你的校园账号'}</h2><p>{auth==='login'?'登录后继续你的校园互助之旅。':'加入校园互助网络，让每次帮助都值得信任。'}</p><form onSubmit={authSubmit}>{auth==='signup'&&<><label>昵称<input name="display_name" required minLength={2} maxLength={30} placeholder="同学们怎么称呼你"/></label><label>学校 / 校区<input name="campus" required maxLength={80} placeholder="例如：XX 大学 · 南校区"/></label></>}<label>邮箱地址<input name="email" type="email" autoComplete="email" required placeholder="name@example.com"/></label><label>密码<input name="password" type="password" minLength={8} autoComplete={auth==='login'?'current-password':'new-password'} required placeholder="至少 8 位字符"/></label>{error&&<div className="error-msg">{error}</div>}{!isConfigured&&<div className="error-msg">尚未配置云端数据库。先完成 README 中的 Supabase 步骤，再注册真实账号。</div>}<button className="primary auth-submit" disabled={busy||!isConfigured}>{busy?'请稍候…':auth==='login'?'登录账户':'创建账户'} <ArrowRight size={18}/></button></form><div className="auth-switch">{auth==='login'?'还没有账号？':'已经注册过了？'} <button onClick={()=>{setAuth(auth==='login'?'signup':'login');setError('')}}>{auth==='login'?'立即注册':'返回登录'}</button></div><small className="privacy"><ShieldCheck size={15}/> 密码由 Supabase Auth 管理，平台不会读取明文密码。</small></section></div>}
+ {review&&<div className="overlay" onMouseDown={()=>setReview(null)}><form className="review-card" onSubmit={submitReview} onMouseDown={e=>e.stopPropagation()}><button type="button" className="close" onClick={()=>setReview(null)}><X/></button><h2>评价本次互助</h2><p>真实评价有助于建立可信的校园互助社区。</p><label>评分<select name="rating" defaultValue="5">{[5,4,3,2,1].map(n=><option key={n} value={n}>{'★'.repeat(n)}（{n} 分）</option>)}</select></label><label>评价内容<textarea name="comment" rows={3} maxLength={500} placeholder="分享本次互助体验（选填）"/></label>{error&&<div className="error-msg">{error}</div>}<button className="primary" disabled={busy}>提交评价</button></form></div>}
+ {toast&&<div className="toast"><CheckCircle2 size={19}/>{toast}</div>}</div>
 }
-
-function App() {
-  const [tab, setTab] = useState<Tab>('home')
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [user, setUser] = useState<User>(loadUser())
-  const [ratings, setRatings] = useState<Rating[]>(loadRatings())
-  const [search, setSearch] = useState('')
-  const [category, setCategory] = useState<(typeof categories)[number]>('全部')
-  const [toast, setToast] = useState('')
-  const [showDetail, setShowDetail] = useState<Task | null>(null)
-
-  useEffect(() => setTasks(loadTasks()), [])
-  useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 2400); return () => clearTimeout(t) } }, [toast])
-
-  const filtered = useMemo(() => tasks.filter(t =>
-    (category === '全部' || t.category === category) &&
-    (t.title + t.description + t.pickup).toLowerCase().includes(search.toLowerCase())
-  ), [tasks, category, search])
-
-  const update = (next: Task[]) => { setTasks(next); saveTasks(next) }
-  const updateUser = (next: User) => { setUser(next); saveUser(next) }
-
-  function acceptTask(task: Task) {
-    if (task.publisher === user.name) return setToast('不能接自己发布的任务')
-    const next = tasks.map(t => t.id === task.id ? { ...t, status: '进行中' as Status, runner: user.name } : t)
-    update(next)
-    setShowDetail(null)
-    setToast('接单成功！请按时完成任务。')
-  }
-
-  function completeTask(task: Task) {
-    const next = tasks.map(t => t.id === task.id ? { ...t, status: '已完成' as Status } : t)
-    update(next)
-    updateUser({ ...user, credit: Math.min(100, user.credit + 1), completed: user.completed + 1 })
-    setToast('任务已完成，信用分 +1')
-  }
-
-  function publishTask(form: Omit<Task, 'id' | 'publisher' | 'publisherCredit' | 'status' | 'createdAt'>) {
-    const task: Task = {
-      ...form,
-      id: crypto.randomUUID(),
-      publisher: user.name,
-      publisherCredit: user.credit,
-      status: '待接单',
-      createdAt: '刚刚',
-    }
-    update([task, ...tasks])
-    updateUser({ ...user, published: user.published + 1 })
-    setTab('tasks')
-    setToast('任务发布成功，等待同学接单！')
-  }
-
-  function rateTask(taskId: string, score: number, comment: string) {
-    const next = [...ratings, { id: crypto.randomUUID(), taskId, from: user.name, score, comment }]
-    setRatings(next); saveRatings(next); setToast('评价已提交，感谢你的反馈！')
-  }
-
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand" onClick={() => setTab('home')}>
-          <div className="brand-mark"><HandHeart size={20}/></div>
-          <div><strong>校园帮帮</strong><span>校内跑腿互助</span></div>
-        </div>
-        <div className="top-actions">
-          <button className="icon-btn" title="通知"><Bell size={19}/><i /></button>
-          <div className="mini-user" onClick={() => setTab('profile')}>
-            <div className="avatar">L</div><span>{user.name}</span>
-          </div>
-        </div>
-      </header>
-
-      <main className="main">
-        {tab === 'home' && (
-          <HomeView
-            user={user}
-            tasks={tasks}
-            onTask={(t) => setShowDetail(t)}
-            onPublish={() => setTab('publish')}
-            onExplore={() => setTab('tasks')}
-          />
-        )}
-        {tab === 'tasks' && (
-          <TaskView tasks={filtered} search={search} category={category} setSearch={setSearch}
-            setCategory={setCategory} onTask={setShowDetail} onPublish={() => setTab('publish')} />
-        )}
-        {tab === 'publish' && <PublishView onSubmit={publishTask} onCancel={() => setTab('home')} />}
-        {tab === 'orders' && (
-          <OrdersView tasks={tasks} user={user} onComplete={completeTask} onTask={setShowDetail} />
-        )}
-        {tab === 'profile' && <ProfileView user={user} ratings={ratings} />}
-      </main>
-
-      <nav className="bottom-nav">
-        {([
-          ['home', Home, '首页'], ['tasks', Search, '找任务'], ['publish', Plus, '发布'],
-          ['orders', ListChecks, '我的订单'], ['profile', UserRound, '我的']
-        ] as const).map(([id, Icon, label]) => (
-          <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
-            <Icon size={21}/><span>{label}</span>
-          </button>
-        ))}
-      </nav>
-
-      {showDetail && (
-        <TaskModal task={showDetail} user={user} onClose={() => setShowDetail(null)}
-          onAccept={acceptTask} onComplete={completeTask} onRate={rateTask} ratings={ratings}/>
-      )}
-      {toast && <div className="toast"><CheckCircle2 size={18}/>{toast}</div>}
-    </div>
-  )
-}
-
-function HomeView({ user, tasks, onTask, onPublish, onExplore }: {
-  user: User; tasks: Task[]; onTask: (t: Task) => void; onPublish: () => void; onExplore: () => void
-}) {
-  return <div className="page home-page">
-    <section className="hero">
-      <div className="hero-copy">
-        <div className="eyebrow"><ShieldCheck size={15}/> 校内实名互助 · 信用保障</div>
-        <h1>让校园里的每一次<br/><em>举手之劳</em>都有回应</h1>
-        <p>代取快递、代买物品、代占座……发布需求，也可以顺手帮助身边的同学。</p>
-        <div className="hero-actions">
-          <button className="primary" onClick={onPublish}><Plus size={18}/> 发布任务</button>
-          <button className="secondary" onClick={onExplore}>浏览任务 <ArrowRight size={17}/></button>
-        </div>
-      </div>
-      <div className="hero-card">
-        <div className="hero-card-title">我的信用</div>
-        <div className="credit-ring"><b>{user.credit}</b><span>信用分</span></div>
-        <div className="credit-note"><ShieldCheck size={15}/> 信用良好，可优先接单</div>
-      </div>
-    </section>
-
-    <section className="quick-stats">
-      <div><b>{tasks.filter(t => t.status === '待接单').length}</b><span>待接任务</span></div>
-      <div><b>98%</b><span>任务完成率</span></div>
-      <div><b>4.9</b><span>平均评分</span></div>
-      <div><b>1,286</b><span>今日互助</span></div>
-    </section>
-
-    <section className="section-head"><div><span className="eyebrow">RECOMMEND</span><h2>附近的任务</h2></div><button className="text-btn" onClick={onExplore}>查看全部 <ChevronRight size={16}/></button></section>
-    <div className="task-grid">
-      {tasks.slice(0, 3).map(t => <TaskCard key={t.id} task={t} onClick={() => onTask(t)}/>)}
-    </div>
-  </div>
-}
-
-function TaskView({ tasks, search, category, setSearch, setCategory, onTask, onPublish }: {
-  tasks: Task[]; search: string; category: (typeof categories)[number]; setSearch: (s: string) => void;
-  setCategory: (c: (typeof categories)[number]) => void; onTask: (t: Task) => void; onPublish: () => void
-}) {
-  return <div className="page">
-    <div className="page-title"><div><span className="eyebrow">TASK MARKET</span><h1>找任务</h1><p>选择你顺路能帮忙的事情，赚取奖励和信用。</p></div><button className="primary" onClick={onPublish}><Plus size={18}/> 发布任务</button></div>
-    <div className="filters">
-      <div className="search-box"><Search size={18}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索任务、地点..." /></div>
-      <div className="chips">{categories.map(c => <button key={c} className={category === c ? 'chip active' : 'chip'} onClick={() => setCategory(c)}>{c}</button>)}</div>
-    </div>
-    <div className="list">{tasks.map(t => <TaskCard key={t.id} task={t} onClick={() => onTask(t)}/>)}</div>
-    {tasks.length === 0 && <EmptyState/>}
-  </div>
-}
-
-function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
-  return <article className="task-card" onClick={onClick}>
-    <div className="task-icon">{categoryIcon[task.category]}</div>
-    <div className="task-body">
-      <div className="task-top"><span className="tag">{task.category}</span><span className={'status ' + (task.status === '待接单' ? 'waiting' : task.status === '进行中' ? 'doing' : 'done')}>{task.status}</span></div>
-      <h3>{task.title}</h3><p>{task.description}</p>
-      <div className="task-meta"><span><MapPin size={14}/>{task.pickup}</span><span><Clock3 size={14}/>{task.deadline}</span></div>
-      <div className="task-foot"><span className="publisher"><span className="avatar small">{task.publisher[0]}</span>{task.publisher} · 信用 {task.publisherCredit}</span><strong>¥{task.reward}<small> 奖励</small></strong></div>
-    </div>
-    <ChevronRight className="card-arrow" size={19}/>
-  </article>
-}
-
-function PublishView({ onSubmit, onCancel }: { onSubmit: (f: Omit<Task, 'id'|'publisher'|'publisherCredit'|'status'|'createdAt'>) => void; onCancel: () => void }) {
-  const [form, setForm] = useState({
-    title: '', description: '', category: '快递代取' as Category, campus: '东校区', pickup: '', deadline: '', reward: 5
-  })
-  const change = (k: string, v: string | number) => setForm(f => ({ ...f, [k]: v }))
-  return <div className="page narrow">
-    <div className="page-title"><div><span className="eyebrow">CREATE TASK</span><h1>发布任务</h1><p>把你的需求说清楚，附近的同学会看到。</p></div></div>
-    <form className="form-card" onSubmit={e => { e.preventDefault(); if (!form.title || !form.pickup || !form.deadline) return; onSubmit(form) }}>
-      <label>任务标题<input required value={form.title} onChange={e => change('title', e.target.value)} placeholder="例如：帮我取一下菜鸟驿站的快递"/></label>
-      <label>任务类型<select value={form.category} onChange={e => change('category', e.target.value)}>{categories.slice(1).map(c => <option key={c}>{c}</option>)}</select></label>
-      <label>具体说明<textarea rows={4} value={form.description} onChange={e => change('description', e.target.value)} placeholder="补充取件码、商品规格、放置位置等信息"/></label>
-      <div className="form-row"><label>校区<select value={form.campus} onChange={e => change('campus', e.target.value)}><option>东校区</option><option>西校区</option><option>南校区</option></select></label><label>取/办事地点<input required value={form.pickup} onChange={e => change('pickup', e.target.value)} placeholder="例如：东区菜鸟驿站"/></label></div>
-      <div className="form-row"><label>截止时间<input required value={form.deadline} onChange={e => change('deadline', e.target.value)} placeholder="例如：今天 18:30"/></label><label>跑腿奖励<input type="number" min="0" value={form.reward} onChange={e => change('reward', Number(e.target.value))}/></label></div>
-      <div className="notice"><ShieldCheck size={18}/><span>建议根据距离和任务难度合理设置奖励。完成任务后，双方可互相评价。</span></div>
-      <div className="form-actions"><button type="button" className="secondary" onClick={onCancel}>取消</button><button className="primary" type="submit">发布任务 <ArrowRight size={17}/></button></div>
-    </form>
-  </div>
-}
-
-function OrdersView({ tasks, user, onComplete, onTask }: { tasks: Task[]; user: User; onComplete: (t: Task) => void; onTask: (t: Task) => void }) {
-  const mine = tasks.filter(t => t.runner === user.name || t.publisher === user.name)
-  return <div className="page">
-    <div className="page-title"><div><span className="eyebrow">MY ORDERS</span><h1>我的订单</h1><p>管理你发布和接下的任务。</p></div></div>
-    <div className="list">{mine.map(t => <article className="order-row" key={t.id} onClick={() => onTask(t)}>
-      <div className="task-icon">{categoryIcon[t.category]}</div><div className="order-main"><b>{t.title}</b><span>{t.publisher === user.name ? '我发布的' : '我接下的'} · {t.status}</span></div>
-      <strong>¥{t.reward}</strong>
-      {t.runner === user.name && t.status === '进行中' && <button className="small-primary" onClick={e => {e.stopPropagation(); onComplete(t)}}>完成任务</button>}
-    </article>)}</div>
-    {mine.length === 0 && <EmptyState text="还没有订单，去找个任务试试吧！"/>}
-  </div>
-}
-
-function ProfileView({ user, ratings }: { user: User; ratings: Rating[] }) {
-  const avg = ratings.length ? (ratings.reduce((s, r) => s + r.score, 0) / ratings.length).toFixed(1) : '5.0'
-  return <div className="page narrow">
-    <div className="profile-hero"><div className="profile-avatar">L</div><h1>{user.name}</h1><span className="verified"><ShieldCheck size={14}/> 校园认证</span></div>
-    <div className="profile-stats"><div><b>{user.credit}</b><span>信用分</span></div><div><b>{user.completed}</b><span>完成任务</span></div><div><b>{avg}</b><span>我的评分</span></div><div><b>{user.published}</b><span>发布任务</span></div></div>
-    <div className="profile-card"><h3><ShieldCheck size={18}/> 信用等级：优秀</h3><p>保持按时完成、友好沟通和真实评价，你的信用分会持续提升。</p><div className="progress"><i style={{width: `${user.credit}%`}}/></div><div className="progress-label"><span>0</span><span>当前 {user.credit}</span><span>100</span></div></div>
-    <div className="profile-card"><h3><Star size={18}/> 平台规则</h3><ul><li>完成任务 +1 信用分</li><li>爽约或恶意取消可能降低信用分</li><li>信用分越高，越容易获得优质任务</li></ul></div>
-  </div>
-}
-
-function TaskModal({ task, user, onClose, onAccept, onComplete, onRate, ratings }: {
-  task: Task; user: User; onClose: () => void; onAccept: (t: Task) => void; onComplete: (t: Task) => void;
-  onRate: (id: string, score: number, comment: string) => void; ratings: Rating[]
-}) {
-  const [score, setScore] = useState(5); const [comment, setComment] = useState('')
-  const rated = ratings.some(r => r.taskId === task.id && r.from === user.name)
-  return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={e => e.stopPropagation()}>
-    <button className="close" onClick={onClose}><X size={20}/></button>
-    <div className="modal-icon">{categoryIcon[task.category]}</div><span className="tag">{task.category}</span><h2>{task.title}</h2><p className="modal-desc">{task.description}</p>
-    <div className="detail-grid"><div><span>地点</span><b><MapPin size={15}/>{task.pickup}</b></div><div><span>截止</span><b><Clock3 size={15}/>{task.deadline}</b></div><div><span>发布者</span><b><UserRound size={15}/>{task.publisher} · {task.publisherCredit}分</b></div><div><span>奖励</span><b className="reward">¥{task.reward}</b></div></div>
-    {task.status === '已完成' && !rated && task.publisher !== user.name && <div className="rating-box"><h3>任务完成了，给对方一个评价吧</h3><div className="stars">{[1,2,3,4,5].map(n => <button key={n} onClick={() => setScore(n)} className={n <= score ? 'selected' : ''}>★</button>)}</div><input value={comment} onChange={e => setComment(e.target.value)} placeholder="说说这次互助体验..." /><button className="primary full" onClick={() => onRate(task.id, score, comment)}>提交评价</button></div>}
-    <div className="modal-actions">
-      {task.status === '待接单' && task.publisher !== user.name && <button className="primary full" onClick={() => onAccept(task)}><HandHeart size={18}/> 我要接单</button>}
-      {task.status === '进行中' && task.runner === user.name && <button className="primary full" onClick={() => onComplete(task)}><CheckCircle2 size={18}/> 标记完成</button>}
-      {task.status === '已完成' && <div className="completed"><CheckCircle2 size={18}/> 任务已完成</div>}
-    </div>
-  </div></div>
-}
-
-function EmptyState({ text = '没有找到符合条件的任务' }: { text?: string }) {
-  return <div className="empty"><div>🔎</div><h3>{text}</h3><p>换个关键词或分类试试看。</p></div>
-}
-
-export default App
+function Head({kicker,title,desc,action}:{kicker:string;title:string;desc:string;action?:ReactNode}){return <div className="page-head"><div><div className="eyebrow">{kicker}</div><h1>{title}</h1><p>{desc}</p></div>{action}</div>}
+function Home({tasks,go,open,ai}:{tasks:Task[];go:(p:Page)=>void;open:(t:Task)=>void;ai:()=>void}){const sorted=[...tasks.filter(t=>t.status==='open')].sort((a,b)=>b.reward/Math.max(100,b.distance_m||300)-a.reward/Math.max(100,a.distance_m||300));return <><section className="hero"><div className="hero-copy"><span className="pill"><i/>校园互助网络 · 现在就开始</span><h1>让每一次顺路，<br/><em>都产生价值。</em></h1><p>把校园里的小需求，交给刚好顺路的同学。<br/>少走一趟路，多帮一个人。</p><div className="hero-actions"><button className="primary big-btn" onClick={()=>go('tasks')}>发现互助任务 <ArrowRight size={19}/></button><button className="secondary big-btn" onClick={ai}><Sparkles size={19}/>智能推荐</button></div><div className="hero-stats"><div><b>{tasks.filter(t=>t.status==='open').length}</b><span>待接任务</span></div><div><b>98.6%</b><span>演示履约率</span></div><div><b>24/7</b><span>校园互助</span></div></div></div><div className="hero-visual"><div className="visual-top"><span><Compass size={19}/> CAMPUS ROUTE RADAR</span><b>● LIVE</b></div><div className="visual-map"><span className="place place-a">图书馆</span><span className="place place-b">教学楼</span><span className="place place-c">菜鸟驿站</span><span className="place place-d">体育馆</span><button className="map-pin pin-a" onClick={()=>sorted[0]&&open(sorted[0])}>¥{sorted[0]?.reward??5}</button><button className="map-pin pin-b" onClick={()=>sorted[1]&&open(sorted[1])}>¥{sorted[1]?.reward??8}</button><span className="you-pin"><UserRound size={18}/></span><div className="map-legend"><span>● 你的位置</span><span>● 可接任务</span></div></div><div className="visual-foot"><span><MapPin size={18}/>附近顺路机会</span><button onClick={()=>go('radar')}>打开雷达 <ArrowRight size={17}/></button></div></div></section><section className="quick-section"><div className="section-heading"><div><div className="eyebrow">QUICK START</div><h2>今天，帮点什么？</h2></div><button className="text-link" onClick={()=>go('tasks')}>查看全部任务 <ArrowRight size={17}/></button></div><div className="quick-grid">{[['📦','快递代取','帮拿快递，送到宿舍'],['☕','代买物品','顺手带一杯饮品'],['💺','图书馆占座','学习搭子互相帮忙'],['📄','资料打印','课程资料轻松到手']].map(x=><button className="quick-card" key={x[1]} onClick={()=>go('tasks')}><span>{x[0]}</span><b>{x[1]}</b><small>{x[2]}</small></button>)}</div></section><section className="recommend-section"><div className="section-heading"><div><div className="eyebrow">GOOD MATCH</div><h2>值得顺手帮一把</h2><p>根据奖励、距离与任务状态进行推荐。</p></div><button className="text-link" onClick={()=>go('tasks')}>更多任务 <ArrowRight size={17}/></button></div><div className="recommend-grid">{sorted.slice(0,3).map(t=><TaskCard key={t.id} task={t} click={()=>open(t)}/>)}</div></section><section className="innovation-grid"><article className="ai-feature"><div className="feature-icon purple"><Sparkles size={24}/></div><div className="eyebrow">SMART MATCH</div><h3>把“我有空”变成“刚好顺路”</h3><p>综合奖励、距离和任务状态，优先发现高性价比互助机会。</p><button onClick={ai}>查看智能推荐 <ArrowRight size={17}/></button></article><article className="trust-feature"><div className="feature-icon green"><ShieldCheck size={24}/></div><div className="eyebrow">TRUST & SAFETY</div><h3>让每一次互助，都更安心</h3><p>账号绑定、订单状态、信用分与互评，建立可追溯的信任机制。</p><button onClick={()=>go('profile')}>了解信用体系 <ArrowRight size={17}/></button></article></section><section className="community-banner"><div className="community-heart"><Heart fill="currentColor"/></div><div><b>从一件小事开始，让校园更友好。</b><span>发布需求、顺路接单、积累信用，让互助成为校园日常。</span></div><button onClick={()=>go('publish')}>发布我的第一个任务 <ArrowRight size={18}/></button></section></>}
+function TaskCard({task,click}:{task:Task;click:()=>void}){const icon:Record<string,string>={'快递':'📦','代买':'☕','占座':'💺','资料':'📄','其他':'🤝'};return <button className="task-card" onClick={click}><span className="task-emoji">{icon[task.category]||'🤝'}</span><span className="task-content"><b>{task.title}</b><small><MapPin size={15}/>{task.pickup_location} → {task.destination}</small><span className="task-meta"><span><Clock3 size={14}/>{task.deadline?new Date(task.deadline).toLocaleString():'时间待沟通'}</span><span><ShieldCheck size={14}/>信用 {task.publisher?.credit_score??'—'}</span></span></span><span className="task-price"><b>¥{task.reward}</b><small>{task.status==='open'?'待接单':task.status==='accepted'?'进行中':task.status==='completed'?'已完成':'已取消'}</small></span></button>}
+function Radar({tasks,click}:{tasks:Task[];click:(t:Task)=>void}){return <section className="page"><Head kicker="ROUTE RADAR" title="顺路雷达" desc="优先发现 550 米范围内的任务。地图目前为示意图，真实路线需要地图 API。"/><div className="radar-layout"><div className="radar-map"><span className="place place-a">图书馆</span><span className="place place-b">教学楼</span><span className="place place-c">菜鸟驿站</span><span className="place place-d">体育馆</span><span className="you-pin radar-you"><UserRound size={18}/></span>{tasks.slice(0,6).map((t,i)=><button className={'map-pin radar-pin rp'+i} key={t.id} onClick={()=>click(t)}>¥{t.reward}</button>)}<div className="map-legend"><span>● 你的位置</span><span>● 可接任务</span></div></div><div className="radar-results"><div className="results-title"><b>附近顺路机会</b><span>{tasks.length} 个任务</span></div>{tasks.map(t=><TaskCard key={t.id} task={t} click={()=>click(t)}/>)}{!tasks.length&&<Empty>附近暂时没有任务，稍后再来看看。</Empty>}<div className="ai-hint"><Sparkles size={19}/><span><b>顺路建议</b><small>当前按距离和奖励展示。真实路线与预计时间需要配置地图服务。</small></span></div></div></div></section>}
+function Profile({session,profile,login,save}:{session:any;profile:Profile|null;login:()=>void;save:(n:string,c:string)=>void}){const[name,setName]=useState(profile?.display_name||''),[campus,setCampus]=useState(profile?.campus||'');useEffect(()=>{setName(profile?.display_name||'');setCampus(profile?.campus||'')},[profile]);if(!session)return <section className="page"><Head kicker="MY CAMPUS ID" title="个人中心" desc="登录后管理个人资料、信用和互助记录。"/><Empty>登录后即可查看个人档案。<button className="primary" onClick={login}>登录 / 注册</button></Empty></section>;return <section className="page"><Head kicker="MY CAMPUS ID" title="个人中心" desc="管理个人资料，查看你的互助身份。"/><div className="profile-hero"><div className="profile-avatar">{(profile?.display_name||'U').slice(0,1).toUpperCase()}</div><div className="profile-main"><h2>{profile?.display_name||'校园同学'}</h2><p>{session.user.email}</p><span><ShieldCheck size={16}/>校园信用档案已创建</span></div><div className="credit-number"><b>{profile?.credit_score??100}</b><small>信用分</small></div></div><div className="profile-columns"><form className="form-card" onSubmit={e=>{e.preventDefault();save(name,campus)}}><h3>个人资料</h3><label>展示昵称<input value={name} onChange={e=>setName(e.target.value)} required minLength={2} maxLength={30}/></label><label>学校 / 校区<input value={campus} onChange={e=>setCampus(e.target.value)} placeholder="学校或校区" maxLength={80}/></label><button className="primary">保存资料</button></form><div className="form-card"><h3>互助档案</h3><div className="profile-stat"><Heart/><span><b>{profile?.mutual_points??0}</b><small>互助值</small></span></div><div className="profile-stat"><CheckCircle2/><span><b>{profile?.completed_count??0}</b><small>已完成任务</small></span></div><div className="profile-stat"><Leaf/><span><b>低碳互助</b><small>顺路任务减少额外出行</small></span></div></div></div></section>}
+function Empty({children}:{children:ReactNode}){return <div className="empty-state"><div>☁</div><b>{children}</b></div>}
+function TaskModal({task,uid,busy,error,close,accept,complete,cancel,review}:{task:Task;uid?:string;busy:boolean;error:string;close:()=>void;accept:()=>void;complete:()=>void;cancel:()=>void;review:()=>void}){const owner=uid===task.publisher_id,runner=uid===task.accepted_by;return <div className="overlay" onMouseDown={close}><section className="task-modal" onMouseDown={e=>e.stopPropagation()}><button className="close" onClick={close}><X/></button><span className="task-emoji large">{task.category==='快递'?'📦':task.category==='代买'?'☕':task.category==='占座'?'💺':'🤝'}</span><div className="eyebrow">{task.category} · 校园互助</div><h2>{task.title}</h2><p>{task.description}</p><div className="route-detail"><MapPin size={19}/><span><b>{task.pickup_location}</b><small>出发地点</small></span><ArrowRight size={18}/><span><b>{task.destination}</b><small>送达地点</small></span></div><div className="detail-metrics"><span><small>任务奖励</small><b>¥{task.reward}</b></span><span><small>任务状态</small><b>{task.status==='open'?'待接单':task.status==='accepted'?'进行中':task.status==='completed'?'已完成':'已取消'}</b></span><span><small>发布者信用</small><b>{task.publisher?.credit_score??'—'}</b></span></div>{error&&<div className="error-msg">{error}</div>}{task.status==='open'&&!owner&&<button className="primary full" disabled={busy} onClick={accept}>{busy?'处理中…':'接受任务'} <ArrowRight size={18}/></button>}{task.status==='accepted'&&(runner||owner)&&<div className="modal-actions">{runner&&<button className="primary" disabled={busy} onClick={complete}>标记完成 <CheckCircle2 size={17}/></button>}{owner&&<button className="outline" disabled={busy} onClick={cancel}>取消任务</button>}</div>}{task.status==='completed'&&uid&&<button className="primary full" onClick={review}><Star size={17}/>评价本次互助</button>}{!uid&&<button className="primary full" onClick={accept}>登录后接单</button>}<div className="trust-note"><ShieldCheck size={18}/>关键订单状态由 PostgreSQL 函数与权限策略校验。</div></section></div>}
